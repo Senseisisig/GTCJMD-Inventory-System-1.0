@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GTCJ-MD | Inventory System</title>
+    
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#22c55e">
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="loginOverlay">
+    <div class="login-box">
+        <div style="margin-bottom: 20px;">
+            <i class="fa fa-shield-halved" style="font-size: 3rem; color: var(--primary); margin-bottom: 15px;"></i>
+            <h2 style="color: var(--primary); margin: 0; letter-spacing: 2px;">SYSTEM ACCESS</h2>
+            <p style="color: #94a3b8; font-size: 0.8rem; margin-top: 5px;">GTCJ-MD Inventory System</p>
+        </div>
+        
+        <div class="input-group">
+            <input type="text" id="user" placeholder="Username" autocomplete="off">
+        </div>
+        <div class="input-group">
+            <input type="password" id="pass" placeholder="Password">
+        </div>
+        
+        <button class="btn btn-p" id="loginBtn" style="width:100%; margin-top: 10px;" onclick="auth()">
+            <i class="fa fa-database"></i> Initialize Database
+        </button>
+        
+        <p id="loginErr" style="color:var(--danger); display:none; margin-top:15px; font-size:0.85rem; font-weight: bold;">
+            <i class="fa fa-exclamation-triangle"></i> Access Denied. Invalid Credentials.
+        </p>
+    </div>
+</div>
+
+<nav id="sidebar">
+    <div style="padding: 40px 25px;">
+        <h2 style="margin:0; color: var(--primary); letter-spacing: 1px;">GTCJ-MD</h2>
+        <small style="color: #94a3b8; text-transform: uppercase; font-size: 0.65rem;">Property Management OS</small>
+    </div>
+    
+    <div class="nav-item active" role="button" tabindex="0" onclick="showPage('dash')"><i class="fa fa-chart-line"></i> Analytics Dashboard</div>
+    <div class="nav-item" role="button" tabindex="0" onclick="showPage('inventory')"><i class="fa fa-boxes-stacked"></i> Master Inventory</div>
+    <div class="nav-item" role="button" tabindex="0" onclick="showPage('add')"><i class="fa fa-plus-circle"></i> Add New Asset</div>
+    <div class="nav-item" role="button" tabindex="0" onclick="showPage('tools')"><i class="fa fa-barcode"></i> Sticker Generator</div>
+    <div class="nav-item" role="button" tabindex="0" onclick="showPage('sys')"><i class="fa fa-server"></i> System Tools</div>
+    
+    <div style="margin-top:auto; padding: 25px; border-top: 1px solid var(--glass-border);">
+        <button class="btn btn-d" style="width:100%" onclick="logout()">Logout</button>
+    </div>
+</nav>
+
+<main id="main-content">
+    <div id="toast"></div>
+
+    <div id="page-dash" class="page">
+        <div class="grid" style="margin-bottom: 25px;">
+            <div class="card" style="border-left: 4px solid var(--info)">
+                <span style="color:#94a3b8; font-size:0.75rem;">TOTAL ASSETS</span>
+                <h1 id="statTotal" style="margin:5px 0; color:var(--info)">0</h1>
+            </div>
+            <div class="card" style="border-left: 4px solid var(--primary)">
+                <span style="color:#94a3b8; font-size:0.75rem;">OPERATIONAL</span>
+                <h1 id="statWork" style="margin:5px 0; color:var(--primary)">0</h1>
+            </div>
+            <div class="card" style="border-left: 4px solid var(--warning)">
+                <span style="color:#94a3b8; font-size:0.75rem;">UNDER REPAIR</span>
+                <h1 id="statRepair" style="margin:5px 0; color:var(--warning)">0</h1>
+            </div>
+            <div class="card" style="border-left: 4px solid var(--danger)">
+                <span style="color:#94a3b8; font-size:0.75rem;">CONDEMNED</span>
+                <h1 id="statCondemned" style="margin:5px 0; color:var(--danger)">0</h1>
+            </div>
+        </div>
+
+        <div class="grid" style="grid-template-columns: 1.5fr 1fr; margin-bottom: 25px;">
+            <div class="card">
+                <h3>Asset Allocation per Division</h3>
+                <div style="height:350px"><canvas id="divChart"></canvas></div>
+            </div>
+            <div class="card">
+                <h3>Condition Ratio</h3>
+                <div style="height:350px"><canvas id="statusChart"></canvas></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Division Health Summary</h3>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Division</th>
+                            <th>Total Items</th>
+                            <th>Working</th>
+                            <th>Critical</th>
+                            <th>Health %</th>
+                        </tr>
+                    </thead>
+                    <tbody id="divisionHealthBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div id="page-inventory" class="page" style="display:none">
+        <div class="card">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap: wrap; gap: 15px;">
+                <h3 style="margin:0">Master Inventory</h3>
+                <div style="display:flex; gap:10px; flex-wrap: wrap; align-items: center;">
+                    <select id="filterDiv" onchange="renderTable(1)" style="width: auto;">
+                        <option value="All">All Divisions</option>
+                        <option>Admin</option><option>CRS</option><option>Security and Control</option>
+                        <option>Welfare and Development</option><option>Logistics</option>
+                        <option>Operations</option><option>Health</option><option>ICTMD</option><option>Paralegal</option>
+                    </select>
+                    
+                    <div class="search-container">
+                        <i class="fa fa-search"></i>
+                        <input type="text" id="search" placeholder="Filter property ID..." oninput="debounceSearch()" autocomplete="off">
+                        <i class="fa fa-times-circle clear-search" onclick="clearSearch()"></i>
+                    </div>
+
+                    <button class="btn btn-p" onclick="exportToExcel()"><i class="fa fa-file-excel"></i> Export</button>
+                </div>
+            </div>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Property ID</th>
+                            <th>Description</th>
+                            <th>Qty</th>
+                            <th>Responsible</th>
+                            <th>Division</th>
+                            <th>Location</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="inventoryBody"></tbody>
+                </table>
+            </div>
+            <div class="pagination-bar" id="pagination"></div>
+        </div>
+    </div>
+
+    <div id="page-add" class="page" style="display:none">
+        <div class="card" style="max-width: 800px; margin: auto;">
+            <h3 id="formTitle">Register New Asset</h3>
+            <div class="grid">
+                <div class="input-group"><label>Description</label><input id="description"></div>
+                <div class="input-group"><label>Quantity</label><input type="number" id="quantity" value="1"></div>
+                <div class="input-group"><label>Serial Number</label><input id="serial"></div>
+                <div class="input-group"><label>Accountable Person</label><input id="accountable"></div>
+                <div class="input-group">
+                    <label>Division</label>
+                    <select id="division">
+                        <option>Admin</option><option>CRS</option><option>Security and Control</option>
+                        <option>Welfare and Development</option><option>Logistics</option>
+                        <option>Operations</option><option>Health</option><option>ICTMD</option><option>Paralegal</option>
+                    </select>
+                </div>
+                <div class="input-group">
+                    <label>Location</label>
+                    <select id="location">
+                        <option>Admin Office</option><option>Clinic</option><option>Gate Area</option>
+                        <option>Commissary</option><option>Building 1</option><option>Building 2</option>
+                        <option>Building 3</option><option>Armory</option><option>Livelihood Area</option><option>Stock Room</option>
+                    </select>
+                </div>
+                <div class="input-group">
+                    <label>Status</label>
+                    <select id="status"><option>Working</option><option>Under Repair</option><option>Condemned</option></select>
+                </div>
+            </div>
+            <div style="margin-top:20px;">
+                <button class="btn btn-p" onclick="addItem()" id="saveBtn">Save Asset</button>
+                <button class="btn btn-s" onclick="clearForm()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="page-tools" class="page" style="display:none">
+        <div class="card no-print">
+            <h3>Print Center</h3>
+            <p style="font-size: 0.8rem; color: #94a3b8;">Generate high-contrast barcodes for scanning.</p>
+            <button class="btn btn-p" onclick="window.print()"><i class="fa fa-print"></i> Print QR/Stickers</button>
+        </div>
+        <div id="stickerGrid" style="display: flex; flex-wrap: wrap; gap: 20px; justify-content: center;"></div>
+    </div>
+
+    <div id="page-sys" class="page" style="display:none">
+        <div class="grid">
+            <div class="card"><h3>Backup</h3><button class="btn btn-s" onclick="backupData()" style="width:100%">Download JSON</button></div>
+            <div class="card"><h3>Restore</h3><input type="file" id="restoreFile" onchange="restoreData(event)" accept=".json"></div>
+            <div class="card"><h3>Danger Zone</h3><button class="btn btn-d" onclick="clearAllData()" style="width:100%">Format Database</button></div>
+        </div>
+        <div class="card">
+            <h3>System Audit Log</h3>
+            <div class="table-container" style="max-height: 300px;">
+                <table>
+                    <thead><tr><th>Time</th><th>Action</th><th>Asset ID</th><th>Details</th></tr></thead>
+                    <tbody id="auditLogBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</main>
+
+<script src="script.js"></script>
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js')
+      .then(() => console.log("GTCJMD System: Offline Mode Active"))
+      .catch((err) => console.log("Offline Setup Failed", err));
+  }
+</script>
+</body>
+</html>
