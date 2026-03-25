@@ -94,7 +94,7 @@ async function loadFromCloud() {
 }
 
 async function addItem() {
-    // FIXED: Changed IDs to match index.html (e.g., "description" vs "desc")
+    // Corrected the ID from "desc" to "description" to match your HTML
     const desc = document.getElementById("description").value.trim();
     const qty = parseInt(document.getElementById("quantity").value) || 1;
     const serial = document.getElementById("serial").value.trim();
@@ -126,7 +126,6 @@ async function addItem() {
 
     try {
         const { data, error } = await supabase.from('inventory').insert([newItem]).select();
-
         if (error) throw error;
 
         items.unshift(data[0]);
