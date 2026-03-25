@@ -1,6 +1,6 @@
 /**
- * GTCJ-MD Inventory System - Cloud Version 1.0
- * Fixed ID Mismatches and Enhanced Form Logic
+ * GTCJ-MD Inventory System - Cloud Version 1.1
+ * Integrated Real-time Sync & Dashboard Analytics
  */
 
 // 1. CONFIGURATION
@@ -26,13 +26,13 @@ window.onload = () => {
     // Auth Event Listeners
     const userField = document.getElementById('user');
     const passField = document.getElementById('pass');
-    [userField, passField].forEach(input => {
-        if(input) {
+    if (userField && passField) {
+        [userField, passField].forEach(input => {
             input.addEventListener('keypress', (e) => {
                 if (e.key === 'Enter') auth();
             });
-        }
-    });
+        });
+    }
 };
 
 // --- AUTHENTICATION ---
@@ -57,6 +57,18 @@ async function init() {
     renderTable();
     updateCharts();
     renderAuditLog();
+
+    // REAL-TIME SYNC: Listen for changes made by other devices
+    supabase
+      .channel('inventory-db-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, (payload) => {
+          console.log('Remote change detected:', payload);
+          loadFromCloud().then(() => {
+              renderTable();
+              updateCharts();
+          });
+      })
+      .subscribe();
 }
 
 // --- CLOUD DATA ACTIONS ---
@@ -94,7 +106,6 @@ async function loadFromCloud() {
 }
 
 async function addItem() {
-    // Corrected the ID from "desc" to "description" to match your HTML
     const desc = document.getElementById("description").value.trim();
     const qty = parseInt(document.getElementById("quantity").value) || 1;
     const serial = document.getElementById("serial").value.trim();
@@ -147,7 +158,10 @@ async function addItem() {
 }
 
 function clearForm() {
-    ["description", "serial", "accountable"].forEach(id => document.getElementById(id).value = "");
+    ["description", "serial", "accountable"].forEach(id => {
+        const el = document.getElementById(id);
+        if(el) el.value = "";
+    });
     document.getElementById("quantity").value = 1;
 }
 
@@ -180,7 +194,7 @@ async function deleteItem(dbId) {
     const { error } = await supabase.from('inventory').delete().eq('id', dbId);
 
     if (!error) {
-        await addAudit("DELETED", itemToDelete.asset_id, itemToDelete.description);
+        if(itemToDelete) await addAudit("DELETED", itemToDelete.asset_id, itemToDelete.description);
         items = items.filter(i => i.id !== dbId);
         renderTable();
         updateCharts();
@@ -229,7 +243,6 @@ function showPage(pageId) {
     document.querySelectorAll('.page').forEach(p => p.style.display = 'none');
     document.getElementById(`page-${pageId}`).style.display = 'block';
     
-    // Update sidebar active state
     document.querySelectorAll('.nav-item').forEach(n => {
         n.classList.remove('active');
         if(n.getAttribute('onclick')?.includes(pageId)) n.classList.add('active');
@@ -237,6 +250,76 @@ function showPage(pageId) {
 }
 
 function updateCharts() {
-    // Placeholder for Chart.js logic - ensures dashboard stays updated
-    console.log("Dashboard Stats Updated:", items.length, "assets found.");
+    if (!items || items.length === 0 || typeof Chart === 'undefined') return;
+
+    // 1. Calculate Stats for Top Cards
+    const stats = {
+        total: items.length,
+        op: items.filter(i => i.status === "Working" || i.status === "Operational").length,
+        repair: items.filter(i => i.status === "Under Repair" || i.status === "Maintenance").length,
+        disposed: items.filter(i => i.status === "Disposed" || i.status === "Lost").length
+    };
+
+    if(document.getElementById("stat-total")) document.getElementById("stat-total").innerText = stats.total;
+    if(document.getElementById("stat-op")) document.getElementById("stat-op").innerText = stats.op;
+    if(document.getElementById("stat-repair")) document.getElementById("stat-repair").innerText = stats.repair;
+    if(document.getElementById("stat-disposed")) document.getElementById("stat-disposed").innerText = stats.disposed;
+
+    // 2. Prepare Chart Data
+    const statusCounts = {};
+    const divCounts = {};
+    items.forEach(item => {
+        statusCounts[item.status] = (statusCounts[item.status] || 0) + 1;
+        divCounts[item.division] = (divCounts[item.division] || 0) + 1;
+    });
+
+    const commonOptions = {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom', labels: { color: '#94a3b8' } } }
+    };
+
+    // 3. Status Doughnut Chart
+    const ctxStatus = document.getElementById('statusChart');
+    if (ctxStatus) {
+        if (charts.status) charts.status.destroy();
+        charts.status = new Chart(ctxStatus.getContext('2d'), {
+            type: 'doughnut',
+            data: {
+                labels: Object.keys(statusCounts),
+                datasets: [{
+                    data: Object.values(statusCounts),
+                    backgroundColor: ['#22c55e', '#f59e0b', '#ef4444', '#3b82f6', '#a855f7'],
+                    borderWidth: 0
+                }]
+            },
+            options: commonOptions
+        });
+    }
+
+    // 4. Division Bar Chart
+    const ctxDiv = document.getElementById('divChart');
+    if (ctxDiv) {
+        if (charts.div) charts.div.destroy();
+        charts.div = new Chart(ctxDiv.getContext('2d'), {
+            type: 'bar',
+            data: {
+                labels: Object.keys(divCounts),
+                datasets: [{
+                    label: 'Assets',
+                    data: Object.values(divCounts),
+                    backgroundColor: 'rgba(34, 197, 94, 0.2)',
+                    borderColor: '#22c55e',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                ...commonOptions,
+                scales: {
+                    y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8' } },
+                    x: { grid: { display: false }, ticks: { color: '#94a3b8' } }
+                }
+            }
+        });
+    }
 }
