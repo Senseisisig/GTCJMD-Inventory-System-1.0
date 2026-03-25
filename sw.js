@@ -1,14 +1,13 @@
 const CACHE_NAME = 'gtcjmd-v1';
 const ASSETS = [
-  './',
-  './index.html',
-  './style.css',
-  './script.js',
-  './manifest.json',
-  'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css',
+  '/',
+  '/index.html',
+  '/style.css',
+  '/script.js',
+  '/manifest.json',
+  'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2', // Added this
   'https://cdn.jsdelivr.net/npm/chart.js',
-  'https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js',
-  'https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.min.js'
+  'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css'
 ];
 
 // Install Service Worker & Cache Files
