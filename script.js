@@ -1,325 +1,120 @@
-/**
- * GTCJ-MD Inventory System - Cloud Version 1.1
- * Integrated Real-time Sync & Dashboard Analytics
- */
+// Initialize Supabase
+const _supabaseUrl = 'YOUR_SUPABASE_URL';
+const _supabaseKey = 'YOUR_SUPABASE_ANON_KEY';
+const supabase = supabase.createClient(_supabaseUrl, _supabaseKey);
 
-// 1. CONFIGURATION
-const SUPABASE_URL = 'https://fwzfbxrchekzwzebxvcj.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_T_IxcMGsDVAClIRdkpZD_w_R8EmbNno';
-const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-
-// State Management
 let items = [];
-let auditLog = [];
-let propertyCounter = 1;
-let charts = { status: null, div: null };
-let searchTimeout = null;
 
-const AUTH_KEY = 'YWRtaW46Z3Rjam1kMjAyNg=='; // admin:gtcjmd2026
+// --- CORE FUNCTIONS ---
 
-window.onload = () => {
-    if (sessionStorage.getItem('gtcjmd_auth') === 'true') {
-        document.getElementById('loginOverlay').style.display = 'none';
-        init();
-    }
+// Fetch data from Supabase
+async function fetchItems() {
+    const { data, error } = await supabase
+        .from('inventory')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+    if (error) console.error('Error fetching:', error);
+    else renderItems(data);
+}
+
+// Generate PAR (Property Acknowledgement Receipt)
+function generatePAR(i) {
+    let item = items[i];
+    let w = window.open("", "_blank");
+    if(!w) return alert("Pop-up blocked! Please allow pop-ups for this site.");
     
-    // Auth Event Listeners
-    const userField = document.getElementById('user');
-    const passField = document.getElementById('pass');
-    if (userField && passField) {
-        [userField, passField].forEach(input => {
-            input.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') auth();
-            });
-        });
-    }
-};
-
-// --- AUTHENTICATION ---
-function auth() {
-    const u = document.getElementById('user').value.trim();
-    const p = document.getElementById('pass').value.trim();
-    if (btoa(`${u}:${p}`) === AUTH_KEY) {
-        sessionStorage.setItem('gtcjmd_auth', 'true');
-        document.getElementById('loginOverlay').style.display = 'none';
-        init();
-    } else {
-        const err = document.getElementById('loginErr');
-        if(err) err.style.display = 'block';
-        alert("Access Denied: Invalid Credentials");
-    }
+    w.document.write(`
+        <html>
+        <head>
+            <title>PAR - ${item.property}</title>
+            <style>
+                body { font-family: serif; padding: 40px; line-height: 1.6; color: #000; background: #fff; }
+                .header { text-align: center; border-bottom: 2px solid black; margin-bottom: 20px; }
+                .details { margin: 30px 0; }
+                .row { display: flex; justify-content: space-between; border-bottom: 1px solid #eee; padding: 8px 0; }
+                .footer { margin-top: 80px; display: grid; grid-template-columns: 1fr 1fr; gap: 50px; }
+                .sign { border-top: 1px solid black; text-align: center; padding-top: 5px; margin-top: 40px; }
+                @media print { .no-print { display: none; } }
+            </style>
+        </head>
+        <body>
+            <div class="no-print" style="text-align:right;"><button onclick="window.print()">Print Document</button></div>
+            <div class="header">
+                <h2>PROPERTY ACKNOWLEDGEMENT RECEIPT</h2>
+                <p>General Trias City Jail Male Dormitory</p>
+            </div>
+            <div class="details">
+                <div class="row"><span>Property Number:</span> <strong>${item.property || 'N/A'}</strong></div>
+                <div class="row"><span>Item Description:</span> <strong>${item.description || 'N/A'}</strong></div>
+                <div class="row"><span>Quantity:</span> <strong>${item.quantity || 1}</strong></div>
+                <div class="row"><span>Serial Number:</span> <strong>${item.serial || 'N/A'}</strong></div>
+                <div class="row"><span>Location:</span> <strong>${item.location || 'N/A'}</strong></div>
+            </div>
+            <p><i>This is to acknowledge receipt of the property listed above for which I am accountable for its proper use and maintenance.</i></p>
+            <div class="footer">
+                <div class="sign"><strong>${item.accountable || '________________'}</strong><br>Received By</div>
+                <div class="sign"><strong>JO1 Dexter Jao B Isaga, Chief Logistics</strong><br>Issued By</div>
+            </div>
+        </body>
+        </html>
+    `);
+    w.document.close();
 }
 
-// --- INITIALIZATION ---
-async function init() {
-    showToast("Connecting to Cloud...");
-    await loadFromCloud();
-    renderTable();
-    updateCharts();
-    renderAuditLog();
+// Render the items to the screen
+function renderItems(data) {
+    items = data;
+    const container = document.getElementById('inventoryContainer');
+    container.innerHTML = "";
 
-    // REAL-TIME SYNC: Listen for changes made by other devices
-    supabase
-      .channel('inventory-db-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, (payload) => {
-          console.log('Remote change detected:', payload);
-          loadFromCloud().then(() => {
-              renderTable();
-              updateCharts();
-          });
-      })
-      .subscribe();
+    items.forEach((item, i) => {
+        const card = document.createElement('div');
+        card.className = "item-card";
+        card.innerHTML = `
+            <div class="item-info">
+                <span class="location-badge">${item.location}</span>
+                <h3>${item.description}</h3>
+                <p><strong>Property #:</strong> ${item.property}</p>
+                <p><strong>Serial:</strong> ${item.serial}</p>
+                <p><strong>Accountable:</strong> ${item.accountable}</p>
+            </div>
+            <div class="item-actions">
+                <button onclick="generatePAR(${i})" class="btn-stealth" style="border-color: #ffd700; color: #ffd700;">Print PAR</button>
+                <button onclick="deleteItem(${item.id})" class="btn-danger">Delete</button>
+            </div>
+        `;
+        container.appendChild(card);
+    });
 }
 
-// --- CLOUD DATA ACTIONS ---
-async function loadFromCloud() {
-    try {
-        let { data: invData, error: invErr } = await supabase
-            .from('inventory')
-            .select('*')
-            .order('created_at', { ascending: false });
-        
-        if (invErr) throw invErr;
-        items = invData || [];
-
-        let { data: logData, error: logErr } = await supabase
-            .from('audit_log')
-            .select('*')
-            .order('created_at', { ascending: false })
-            .limit(50);
-        
-        if (logErr) throw logErr;
-        auditLog = logData || [];
-
-        // Sync property counter to highest existing ID
-        if (items.length > 0) {
-            const ids = items.map(i => {
-                const parts = i.asset_id.split('-');
-                return parts.length > 1 ? parseInt(parts[1]) : 0;
-            });
-            propertyCounter = Math.max(...ids) + 1;
-        }
-    } catch (err) {
-        console.error("Cloud Error:", err.message);
-        showToast("Error loading cloud data", "danger");
-    }
-}
-
-async function addItem() {
-    const desc = document.getElementById("description").value.trim();
-    const qty = parseInt(document.getElementById("quantity").value) || 1;
-    const serial = document.getElementById("serial").value.trim();
-    const accountable = document.getElementById("accountable").value.trim();
-    const div = document.getElementById("division").value;
-    const loc = document.getElementById("location").value;
-    const stat = document.getElementById("status").value;
-
-    if (!desc) {
-        showToast("Description is required", "danger");
-        return;
-    }
-
-    const saveBtn = document.getElementById("saveBtn");
-    saveBtn.disabled = true;
-    saveBtn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Syncing...';
-
+// Add Item Logic
+document.getElementById('saveBtn').addEventListener('click', async () => {
     const newItem = {
-        asset_id: `GTCJMD-${String(propertyCounter).padStart(4, '0')}`,
-        description: desc,
-        quantity: qty,
-        serial_number: serial,
-        accountable_person: accountable,
-        division: div,
-        location: loc,
-        status: stat,
-        created_at: new Date().toISOString()
+        property: document.getElementById('property').value,
+        description: document.getElementById('description').value,
+        quantity: document.getElementById('quantity').value,
+        serial: document.getElementById('serial').value,
+        accountable: document.getElementById('accountable').value,
+        location: document.getElementById('locationSelect').value
     };
 
-    try {
-        const { data, error } = await supabase.from('inventory').insert([newItem]).select();
-        if (error) throw error;
+    const { error } = await supabase.from('inventory').insert([newItem]);
+    if (error) alert("Error saving data");
+    else {
+        fetchItems();
+        // Clear inputs
+        document.querySelectorAll('input').forEach(input => input.value = "");
+    }
+});
 
-        items.unshift(data[0]);
-        propertyCounter++;
-        await addAudit("ADDED", newItem.asset_id, desc);
-        
-        clearForm();
-        showPage('inventory');
-        renderTable();
-        updateCharts();
-        showToast("Asset Synced Successfully!");
-    } catch (err) {
-        console.error("Insert Error:", err.message);
-        showToast("Sync Failed: " + err.message, "danger");
-    } finally {
-        saveBtn.disabled = false;
-        saveBtn.innerHTML = 'Save Asset';
+// Delete Logic
+async function deleteItem(id) {
+    if(confirm("Are you sure you want to delete this item?")) {
+        await supabase.from('inventory').delete().eq('id', id);
+        fetchItems();
     }
 }
 
-function clearForm() {
-    ["description", "serial", "accountable"].forEach(id => {
-        const el = document.getElementById(id);
-        if(el) el.value = "";
-    });
-    document.getElementById("quantity").value = 1;
-}
-
-// --- UI & RENDER LOGIC ---
-function renderTable(filtered = items) {
-    const body = document.getElementById("inventoryBody");
-    if(!body) return;
-    
-    body.innerHTML = filtered.map(item => `
-        <tr>
-            <td><span class="status-badge Working" style="font-family: monospace;">${item.asset_id}</span></td>
-            <td><b>${item.description}</b><br><small style="color:#94a3b8">${item.serial_number || 'No Serial'}</small></td>
-            <td>${item.quantity}</td>
-            <td>${item.accountable_person || 'N/A'}</td>
-            <td>${item.division}</td>
-            <td>${item.location}</td>
-            <td><span class="status-badge ${item.status.replace(' ', '_')}">${item.status}</span></td>
-            <td>
-                <button class="btn btn-s" onclick="generateStickers('${item.asset_id}')" title="Barcode"><i class="fa fa-barcode"></i></button>
-                <button class="btn btn-d" onclick="deleteItem(${item.id})" title="Delete"><i class="fa fa-trash"></i></button>
-            </td>
-        </tr>
-    `).join('');
-}
-
-async function deleteItem(dbId) {
-    if (!confirm("Are you sure you want to delete this asset?")) return;
-    
-    const itemToDelete = items.find(i => i.id === dbId);
-    const { error } = await supabase.from('inventory').delete().eq('id', dbId);
-
-    if (!error) {
-        if(itemToDelete) await addAudit("DELETED", itemToDelete.asset_id, itemToDelete.description);
-        items = items.filter(i => i.id !== dbId);
-        renderTable();
-        updateCharts();
-        showToast("Item removed from cloud", "warning");
-    }
-}
-
-async function addAudit(action, assetId, desc) {
-    const entry = {
-        time: new Date().toLocaleString(),
-        action: action,
-        asset_id: assetId,
-        details: desc
-    };
-    
-    const { data, error } = await supabase.from('audit_log').insert([entry]).select();
-    if (!error && data) {
-        auditLog.unshift(data[0]);
-        renderAuditLog();
-    }
-}
-
-function renderAuditLog() {
-    const body = document.getElementById("auditLogBody");
-    if(!body) return;
-    body.innerHTML = auditLog.slice(0, 20).map(l => `
-        <tr>
-            <td style="font-size:0.7rem; color:#94a3b8">${l.time || new Date(l.created_at).toLocaleString()}</td>
-            <td><b style="color:${l.action === 'DELETED' ? 'var(--danger)' : 'var(--primary)'}">${l.action}</b></td>
-            <td style="color:var(--info)">${l.asset_id}</td>
-            <td>${l.details}</td>
-        </tr>
-    `).join('');
-}
-
-function showToast(msg, type = "primary") {
-    const toast = document.getElementById("toast");
-    if(!toast) return;
-    toast.innerText = msg;
-    toast.style.background = type === "danger" ? "var(--danger)" : (type === "warning" ? "var(--warning)" : "var(--primary)");
-    toast.style.display = "block";
-    setTimeout(() => { toast.style.display = "none"; }, 3000);
-}
-
-function showPage(pageId) {
-    document.querySelectorAll('.page').forEach(p => p.style.display = 'none');
-    document.getElementById(`page-${pageId}`).style.display = 'block';
-    
-    document.querySelectorAll('.nav-item').forEach(n => {
-        n.classList.remove('active');
-        if(n.getAttribute('onclick')?.includes(pageId)) n.classList.add('active');
-    });
-}
-
-function updateCharts() {
-    if (!items || items.length === 0 || typeof Chart === 'undefined') return;
-
-    // 1. Calculate Stats for Top Cards
-    const stats = {
-        total: items.length,
-        op: items.filter(i => i.status === "Working" || i.status === "Operational").length,
-        repair: items.filter(i => i.status === "Under Repair" || i.status === "Maintenance").length,
-        disposed: items.filter(i => i.status === "Disposed" || i.status === "Lost").length
-    };
-
-    if(document.getElementById("stat-total")) document.getElementById("stat-total").innerText = stats.total;
-    if(document.getElementById("stat-op")) document.getElementById("stat-op").innerText = stats.op;
-    if(document.getElementById("stat-repair")) document.getElementById("stat-repair").innerText = stats.repair;
-    if(document.getElementById("stat-disposed")) document.getElementById("stat-disposed").innerText = stats.disposed;
-
-    // 2. Prepare Chart Data
-    const statusCounts = {};
-    const divCounts = {};
-    items.forEach(item => {
-        statusCounts[item.status] = (statusCounts[item.status] || 0) + 1;
-        divCounts[item.division] = (divCounts[item.division] || 0) + 1;
-    });
-
-    const commonOptions = {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { position: 'bottom', labels: { color: '#94a3b8' } } }
-    };
-
-    // 3. Status Doughnut Chart
-    const ctxStatus = document.getElementById('statusChart');
-    if (ctxStatus) {
-        if (charts.status) charts.status.destroy();
-        charts.status = new Chart(ctxStatus.getContext('2d'), {
-            type: 'doughnut',
-            data: {
-                labels: Object.keys(statusCounts),
-                datasets: [{
-                    data: Object.values(statusCounts),
-                    backgroundColor: ['#22c55e', '#f59e0b', '#ef4444', '#3b82f6', '#a855f7'],
-                    borderWidth: 0
-                }]
-            },
-            options: commonOptions
-        });
-    }
-
-    // 4. Division Bar Chart
-    const ctxDiv = document.getElementById('divChart');
-    if (ctxDiv) {
-        if (charts.div) charts.div.destroy();
-        charts.div = new Chart(ctxDiv.getContext('2d'), {
-            type: 'bar',
-            data: {
-                labels: Object.keys(divCounts),
-                datasets: [{
-                    label: 'Assets',
-                    data: Object.values(divCounts),
-                    backgroundColor: 'rgba(34, 197, 94, 0.2)',
-                    borderColor: '#22c55e',
-                    borderWidth: 1
-                }]
-            },
-            options: {
-                ...commonOptions,
-                scales: {
-                    y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8' } },
-                    x: { grid: { display: false }, ticks: { color: '#94a3b8' } }
-                }
-            }
-        });
-    }
-}
+// Initial Load
+fetchItems();
